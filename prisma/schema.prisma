@@ -1,0 +1,93 @@
+// prisma/schema.prisma
+
+generator client {
+  provider        = "prisma-client-js"
+  previewFeatures = ["postgresqlExtensions"]
+}
+
+datasource db {
+  provider   = "postgresql"
+  url        = env("DATABASE_URL")
+  directUrl  = env("DIRECT_URL")
+  extensions = [vector]
+}
+
+enum Role {
+  admin
+  agent
+}
+
+enum TicketStatus {
+  open
+  pending
+  resolved
+  closed
+}
+
+enum TicketPriority {
+  low
+  med
+  high
+}
+
+model User {
+  id           String    @id @default(cuid())
+  email        String    @unique
+  passwordHash String?
+  role         Role      @default(agent)
+  createdAt    DateTime  @default(now())
+  
+  tickets      Ticket[]  @relation("Assignee")
+  replies      Reply[]   @relation("ReplyAuthor")
+  auditLogs    AuditLog[]
+}
+
+model Ticket {
+  id             String         @id @default(cuid())
+  subject        String
+  body           String
+  status         TicketStatus   @default(open)
+  priority       TicketPriority @default(med)
+  requesterEmail String
+  assigneeId     String?
+  createdAt      DateTime       @default(now())
+  updatedAt      DateTime       @updatedAt
+  deletedAt      DateTime?      // Soft delete
+
+  assignee       User?          @relation("Assignee", fields: [assigneeId], references: [id])
+  replies        Reply[]
+}
+
+model Reply {
+  id         String   @id @default(cuid())
+  ticketId   String
+  authorId   String
+  body       String
+  isAiDraft  Boolean  @default(false)
+  createdAt  DateTime @default(now())
+
+  ticket     Ticket   @relation(fields: [ticketId], references: [id])
+  author     User     @relation("ReplyAuthor", fields: [authorId], references: [id])
+}
+
+model Article {
+  id        String    @id @default(cuid())
+  title     String
+  body      String
+  tags      String[]
+  embedding Unsupported("vector(1536)")?
+  updatedAt DateTime  @updatedAt
+  deletedAt DateTime? // Soft delete
+}
+
+model AuditLog {
+  id        String   @id @default(cuid())
+  entity    String   // e.g. "Ticket"
+  entityId  String
+  action    String   // e.g. "UPDATE_STATUS", "SOFT_DELETE"
+  actorId   String
+  metadata  Json?
+  createdAt DateTime @default(now())
+
+  actor     User     @relation(fields: [actorId], references: [id])
+}
