@@ -12,6 +12,8 @@ export default async function AdminArticlesPage({
 
   const { items, nextCursor } = await getArticles({ cursor, limit: 25, search });
 
+  // This is a clean Server Action handler that runs safely on the server 
+  // without needing an inline "use server" directive here.
   async function handleDelete(formData: FormData) {
     "use server";
     const id = formData.get("id") as string;
