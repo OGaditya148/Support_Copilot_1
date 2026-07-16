@@ -1,26 +1,17 @@
 "use server";
 
-import { z } from "zod";
 import { PrismaClient, Prisma } from "@prisma/client";
 import { auth } from "@/lib/auth";
 import { generateEmbedding } from "@/lib/embeddings";
-
-const prisma = new PrismaClient();
-
-export const articleSchema = z.object({
-  id: z.string().optional(),
-  title: z.string().min(1),
-  body: z.string().min(1),
-  tags: z.array(z.string()).default([]),
-});
-
-export const getArticlesSchema = z.object({
-  cursor: z.string().optional(),
-  limit: z.number().min(1).max(100).default(25),
-  search: z.string().optional(),
-});
-
 import { redirect } from "next/navigation";
+import { z } from "zod";
+
+// Import the schemas from your new schemas/validation file
+import { articleSchema, getArticlesSchema } from "./schemas";
+
+// Note: It is highly recommended to use a single global Prisma client (e.g., from "@/lib/db")
+// to prevent running out of database connections in development.
+const prisma = new PrismaClient();
 
 async function requireAdmin() {
   const session = await auth();
