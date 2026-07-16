@@ -1,6 +1,5 @@
 "use server";
 
-import { z } from "zod";
 import { PrismaClient, Prisma } from "@prisma/client";
 import { auth } from "@/lib/auth";
 import { 
@@ -12,7 +11,9 @@ import {
   createTicketSchema,
 } from "@/lib/zod-schemas";
 import { redirect } from "next/navigation";
+import { z } from "zod";
 
+// Recommended: Replace with your global prisma singleton if available (e.g., import { prisma } from "@/lib/db")
 const prisma = new PrismaClient();
 
 // Returns a session user whose .id is ALWAYS a real DB User.id
@@ -94,7 +95,7 @@ export async function updateTicketStatus(input: z.infer<typeof updateTicketStatu
       entity: "Ticket",
       entityId: ticket.id,
       action: "UPDATE_STATUS",
-      actorId: user.id as string,
+      actorId: user.id,
       metadata: { newStatus: parsed.status },
     }
   });
@@ -116,7 +117,7 @@ export async function updateTicketPriority(input: z.infer<typeof updateTicketPri
       entity: "Ticket",
       entityId: ticket.id,
       action: "UPDATE_PRIORITY",
-      actorId: user.id as string,
+      actorId: user.id,
       metadata: { newPriority: parsed.priority },
     }
   });
@@ -126,7 +127,7 @@ export async function updateTicketPriority(input: z.infer<typeof updateTicketPri
 
 export async function softDeleteTicket(input: z.infer<typeof deleteTicketSchema>) {
   const user = await requireAuth();
-  // @ts-ignore
+  
   if (user.role !== "admin") {
     throw new Error("Forbidden");
   }
@@ -143,7 +144,7 @@ export async function softDeleteTicket(input: z.infer<typeof deleteTicketSchema>
       entity: "Ticket",
       entityId: ticket.id,
       action: "SOFT_DELETE",
-      actorId: user.id as string,
+      actorId: user.id,
     }
   });
 
@@ -154,26 +155,31 @@ export async function createTicket(input: z.infer<typeof createTicketSchema>) {
   const user = await requireAuth();
   const parsed = createTicketSchema.parse(input);
 
-  // tickets start unassigned — agents claim them from the detail view
-  const ticket = await prisma.ticket.create({
-    data: {
-      subject: parsed.subject,
-      body: parsed.body,
-      priority: parsed.priority,
-      requesterEmail: parsed.requesterEmail,
-    },
+  // Use a transaction block to ensure both database operations succeed atomically 
+  // before the redirect intercepts the execution flow
+  const ticket = await prisma.$transaction(async (tx) => {
+    const newTicket = await tx.ticket.create({
+      data: {
+        subject: parsed.subject,
+        body: parsed.body,
+        priority: parsed.priority,
+        requesterEmail: parsed.requesterEmail,
+      },
+    });
+
+    await tx.auditLog.create({
+      data: {
+        entity: "Ticket",
+        entityId: newTicket.id,
+        action: "CREATE",
+        actorId: user.id,
+        metadata: { subject: newTicket.subject },
+      },
+    });
+
+    return newTicket;
   });
 
-  // user.id is a real DB User.id (guaranteed by auth.ts signIn callback)
-  await prisma.auditLog.create({
-    data: {
-      entity: "Ticket",
-      entityId: ticket.id,
-      action: "CREATE",
-      actorId: user.id as string,
-      metadata: { subject: ticket.subject },
-    },
-  });
-
+  // Safe to redirect now that the transactions are fully completed and closed
   redirect(`/tickets/${ticket.id}`);
 }
